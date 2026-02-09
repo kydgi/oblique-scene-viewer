@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KyFromAbove 3D Scene Viewer for Oblique Imagery</title>
+    <!-- Load Calcite Design System -->
+    <script type="module" src="https://js.arcgis.com/calcite-components/3.3.3/calcite.esm.js"></script>
+
+    <!-- Load the JavaScript Maps SDK core API -->
+    <script src="https://js.arcgis.com/4.34/"></script>
+
+    <!-- Load the JavaScript Maps SDK Map components or other component packages -->
+    <script type="module" src="https://js.arcgis.com/4.34/map-components/"></script>
+
+    <style>
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #app-container {
+            display: flex;
+            flex: 1;
+            height: 100%;
+        }
+
+        #viewDiv {
+            flex: 1;
+            height: 100%;
+            position: relative;
+            transition: flex 0.3s ease;
+        }
+
+        #viewDiv.imagery-fullscreen {
+            flex: 0;
+            width: 0;
+            overflow: hidden;
+        }
+
+        #imagery-container {
+            width: 50%;
+            height: 100%;
+            background: white;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        #imagery-container arcgis-oriented-imagery-viewer {
+            width: 100%;
+            height: 100%;
+        }
+
+        #imagery-container.fullscreen {
+            width: 100%;
+        }
+
+        calcite-shell {
+            height: 100%;
+        }
+
+        arcgis-scene {
+            height: 100%;
+        }
+
+        #fullscreen-toggle {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 10000;
+        }
+
+        #map-fullscreen-toggle {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 10000;
+        }
+
+        #imagery-container.hidden {
+            width: 0;
+            overflow: hidden;
+        }
+
+        #viewDiv.map-fullscreen {
+            flex: 1;
+            width: 100%;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="app-container">
+        <div id="viewDiv">
+            <calcite-button id="map-fullscreen-toggle" icon-start="extent" appearance="solid" kind="neutral" scale="s"
+                title="Toggle map fullscreen"></calcite-button>
+            <calcite-shell>
+                <calcite-navigation slot="header">
+                    <calcite-navigation-logo slot="logo" target="_blank"></calcite-navigation-logo>
+                </calcite-navigation>
+                <arcgis-scene item-id="26c8688d75f342ab87f61b5d86ae4e2c">
+                    <arcgis-expand slot="top-right">
+                        <arcgis-legend></arcgis-legend>
+                    </arcgis-expand>
+                    <arcgis-expand slot="top-right" mode="floating">
+                        <arcgis-layer-list></arcgis-layer-list>
+                    </arcgis-expand>
+                    <arcgis-expand slot="top-right" mode="floating">
+                        <arcgis-elevation-profile unit="imperial"></arcgis-elevation-profile>
+                    </arcgis-expand>
+                    <arcgis-zoom slot="top-left"></arcgis-zoom>
+                    <arcgis-compass slot="top-right"></arcgis-compass>
+                    <arcgis-locate slot="top-right"></arcgis-locate>
+                    <arcgis-scale-bar slot="bottom-left" unit="imperial" bar-style="ruler"></arcgis-scale-bar>
+                </arcgis-scene>
+            </calcite-shell>
+            <calcite-loader></calcite-loader>
+        </div>
+        <div id="imagery-container">
+            <calcite-button id="fullscreen-toggle" icon-start="extent" appearance="solid" kind="neutral" scale="s"
+                title="Toggle fullscreen"></calcite-button>
+            <arcgis-oriented-imagery-viewer navigation-tool-active></arcgis-oriented-imagery-viewer>
+        </div>
+    </div>
+    <script type="module">
+        // Import the FeatureLayer module
+        const FeatureLayer = await $arcgis.import("@arcgis/core/layers/FeatureLayer.js");
+        // Import the ElevationLayer module
+        const ElevationLayer = await $arcgis.import("@arcgis/core/layers/ElevationLayer.js");
+
+        // Get a reference to the arcgis-map custom element
+        const viewElement = document.querySelector("arcgis-scene");
+        // Get a reference to the arcgis-elevation-profile custom element
+        const arcgisElevationProfile = document.querySelector("arcgis-elevation-profile");
+        const orientedImageryViewerElement = document.querySelector("arcgis-oriented-imagery-viewer");
+
+
+
+        // Wait for the view to be ready before adding additional functionality
+        await viewElement.viewOnReady();
+
+        const orientedImageryLayer = viewElement.map?.allLayers.find((layer) => console.log(layer) || layer.type === "oriented-imagery");
+        if (orientedImageryLayer) {
+            await orientedImageryLayer.load();
+            if (orientedImageryLayer.loaded && orientedImageryLayer.type === "oriented-imagery") {
+                orientedImageryViewerElement.layer = orientedImageryLayer;
+                orientedImageryViewerElement.view = viewElement.view;
+
+                // Filter out nadir images - only show oblique imagery
+                orientedImageryViewerElement.cameraFilter = (camera) => {
+                    // Check name, title, and other common properties for "nadir"
+                    const searchText = [
+                        camera.name,
+                        camera.title,
+                        camera.description,
+                        camera.imageId
+                    ].filter(Boolean).join(" ").toLowerCase();
+
+                    return !searchText.includes("nadir");
+                };
+            }
+        }
+
+        // Disable snap to zoom levels
+        viewElement.constraints.snapToZoom = false;
+
+        // Adds the Phase 2 elevation service to the ground
+        let phase2 = new ElevationLayer({
+            // id: "ed462c5e352d49099ec922663580082b"
+            "url": "https://tiles.arcgis.com/tiles/ghsX9CKghMvyYjBU/arcgis/rest/services/Ky_DEM_KYAPED_Phase2_WM/ImageServer"
+        });
+
+        // Add the elevation layer to the ground
+        viewElement.ground.layers.add(phase2);
+
+        // Configure the elevation profile to use the ground elevation
+        arcgisElevationProfile.profiles = [
+            {
+                type: "ground", // first profile line samples the ground elevation
+            }
+        ];
+
+        // Get the portal item information from the map metadata
+        const { portalItem } = viewElement.map;
+        // View all of the properties available in the portal item
+        console.log(portalItem);
+        // Set the navigation logo information
+        const navigationLogo = document.querySelector("calcite-navigation-logo");
+        navigationLogo.heading = portalItem.title;
+        navigationLogo.description = portalItem.snippet;
+        navigationLogo.thumbnail = portalItem.thumbnailUrl;
+        navigationLogo.href = portalItem.itemPageUrl;
+        navigationLogo.label = "Thumbnail of map";
+
+        // Set the ARIA label and description for the view
+        viewElement.aria = {
+            label: portalItem.title,
+            description: portalItem.snippet,
+        };
+
+        // Update the theme to use slightly transparent green graphics and green text
+        viewElement.theme = {
+            accentColor: [55, 200, 100, 1],
+            textColor: "orange",
+        };
+
+        // Turn off the loader once the view is ready
+        document.querySelector("calcite-loader").hidden = true;
+
+        // Set up split screen view
+        const viewDiv = document.querySelector("#viewDiv");
+        const imageryContainer = document.querySelector("#imagery-container");
+        const fullscreenToggle = document.querySelector("#fullscreen-toggle");
+
+        // Fullscreen toggle for oriented imagery viewer
+        fullscreenToggle.addEventListener("click", () => {
+            imageryContainer.classList.toggle("fullscreen");
+            viewDiv.classList.toggle("imagery-fullscreen");
+            const isFullscreen = imageryContainer.classList.contains("fullscreen");
+            fullscreenToggle.iconStart = isFullscreen ? "chevrons-right" : "extent";
+            fullscreenToggle.title = isFullscreen ? "Exit fullscreen" : "Toggle fullscreen";
+        });
+
+        // Fullscreen toggle for map
+        const mapFullscreenToggle = document.querySelector("#map-fullscreen-toggle");
+        mapFullscreenToggle.addEventListener("click", () => {
+            viewDiv.classList.toggle("map-fullscreen");
+            imageryContainer.classList.toggle("hidden");
+            const isFullscreen = viewDiv.classList.contains("map-fullscreen");
+            mapFullscreenToggle.iconStart = isFullscreen ? "chevrons-left" : "extent";
+            mapFullscreenToggle.title = isFullscreen ? "Exit fullscreen" : "Toggle map fullscreen";
+        });
+
+    </script>
+
+</body>
+
+</html>
